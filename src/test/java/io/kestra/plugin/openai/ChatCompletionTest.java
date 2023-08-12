@@ -1,6 +1,11 @@
 package io.kestra.plugin.openai;
 
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.theokanning.openai.completion.chat.ChatMessage;
+import com.theokanning.openai.service.OpenAiService;
 import io.kestra.core.runners.RunContext;
 import io.kestra.core.runners.RunContextFactory;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
@@ -60,8 +65,6 @@ public class ChatCompletionTest {
         assertThat(runOutput.getUsage().getPromptTokens(), is(14L));
     }
 
-
-
     @Test
     void runMessagesWithPrompt() throws Exception {
         RunContext runContext = runContextFactory.of();
@@ -83,6 +86,37 @@ public class ChatCompletionTest {
         assertThat(runOutput.getChoices().get(0).getMessage().getContent(), containsString("Berlin"));
         assertThat(runOutput.getModel(), containsString("gpt-3.5-turbo"));
         assertThat(runOutput.getUsage().getPromptTokens(), is(35L));
+    }
+
+    @Test
+    void runFunctionsWithPrompt() throws Exception {
+        RunContext runContext = runContextFactory.of();
+
+        String jsonString = "{\"type\":\"object\",\"properties\":{\"location\":{\"type\":\"string\",\"description\":\"The city and state/province, and country, e.g. San Francisco, CA, USA\"},\"unit\":{\"type\":\"string\",\"description\": \"The temperature unit this city uses.\", \"enum\":[\"celsius\",\"fahrenheit\"]}},\"required\":[\"location\", \"unit\"]}";
+        ObjectMapper mapper = OpenAiService.defaultObjectMapper();
+
+        JsonParser jp = mapper.getFactory().createJsonParser(jsonString);
+        JsonNode parameters = mapper.readTree(jp);
+
+        List<ChatCompletion.PluginChatFunction> functions = List.of(
+            new ChatCompletion.PluginChatFunction("test", "finds the most relevant city and its temperature unit", parameters)
+        );
+
+        List<ChatMessage> messages = List.of(
+            buildMessage("user","I was travelling along the Mediterranean coast, and I ended up in Lyon.")
+        );
+
+        ChatCompletion task = ChatCompletion.builder()
+            .apiKey(this.apiKey)
+            .model("gpt-3.5-turbo-0613")
+            .messages(messages)
+            .functions(functions)
+            .functionCall("test")
+            .build();
+
+        ChatCompletion.Output runOutput = task.run(runContext);
+
+        System.out.println("omg!");
     }
 
     private ChatMessage buildMessage(String role, String content) {
